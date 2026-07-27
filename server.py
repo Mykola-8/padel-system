@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
+import shutil
 import subprocess
 import requests
 import os
@@ -18,6 +19,14 @@ court_users = {}
 @app.get("/")
 def home():
     return {"status": "Padel Cloud Clip Server is running!"}
+
+@app.post("/upload/{court_id}")
+async def upload_chunk(court_id: str, file: UploadFile = File(...)):
+    os.makedirs("buffer", exist_ok=True)
+    file_path = f"buffer/{court_id}_{file.filename}"
+    with open(file_path, "wb") as buffer_file:
+        shutil.copyfileobj(file.file, buffer_file)
+    return {"success": True, "filename": file.filename}
 
 @app.get("/trigger/{court_id}")
 def trigger_highlight(court_id: str):
@@ -92,7 +101,7 @@ async def start_telegram_bot():
         try:
             requests.post("http://127.0.0.1:8000/register-user", json={"court_id": court, "chat_id": chat_id})
         except Exception:
-            court_users[court] = chat_id # Реєструємо локально в пам'яті якщо шлях не пройшов
+            court_users[court] = chat_id
 
         builder = ReplyKeyboardBuilder()
         builder.add(types.KeyboardButton(text="🎥 Зберегти хайлайт"))
@@ -109,7 +118,6 @@ async def start_telegram_bot():
         
         await message.answer("⏳ Обробляємо відео з буфера...")
         try:
-            # Звертаємось до нашого ж хмарного сервера
             response = requests.get(f"http://127.0.0.1:8000/trigger/{court}")
             data = response.json()
             if not data.get("success"):
@@ -125,6 +133,5 @@ def run_bot_in_background():
 
 @app.on_event("startup")
 def startup_event():
-    # Запускаємо бота в окремому фоновому потоці при старті FastAPI
     t = threading.Thread(target=run_bot_in_background, daemon=True)
     t.start()
